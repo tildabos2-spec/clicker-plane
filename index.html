@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>✈️ Военные Самолёты — Кликер</title>
+  
+  <!-- Подключаем PyScript -->
+  <link rel="stylesheet" href="https://pyscript.net/latest/pyscript.css" />
+  <script defer src="https://pyscript.net/latest/pyscript.js"></script>
+  
+  <style>
+    body { font-family: Arial, sans-serif; background: #f0f8ff; padding: 20px; }
+    .header { background: #1a2530; color: gold; padding: 15px; border-radius: 10px; text-align: center; margin-bottom: 20px; }
+    .stats { display: flex; justify-content: space-around; margin: 15px 0; }
+    .stat { background: white; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+    .click-btn {
+      background: #e74c3c; color: white; border: none; padding: 20px 40px;
+      font-size: 24px; border-radius: 15px; cursor: pointer; margin: 20px 0;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+    .click-btn:hover { background: #c0392b; }
+    .section { background: white; padding: 15px; border-radius: 10px; margin: 15px 0; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+    .item { display: flex; justify-content: space-between; align-items: center; padding: 10px; margin: 5px 0; border-bottom: 1px solid #eee; }
+    .buy-btn { background: #3498db; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; }
+    .buy-btn:disabled { background: #95a5a6; cursor: not-allowed; }
+    .purchased { background: #2ecc71 !important; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>✈️ Военные Самолёты — Кликер</h1>
+    <div id="money">Деньги: $0</div>
+  </div>
+
+  <div class="stats">
+    <div class="stat">Клик: <span id="click-power">1</span></div>
+    <div class="stat">Доход: <span id="passive-income">0</span>$/сек</div>
+  </div>
+
+  <button class="click-btn" onclick="clickAircraft()">✈️ КЛИКНИ НА САМОЛЁТ!</button>
+
+  <div class="section">
+    <h3>✈️ Самолёты</h3>
+    <div id="aircrafts"></div>
+  </div>
+
+  <div class="section">
+    <h3>🛒 Улучшения</h3>
+    <div id="upgrades"></div>
+  </div>
+
+  <py-script>
+import json
+from js import document, setInterval
+from pyodide.ffi import create_proxy
+
+# Данные игры
+game = {
+    "money": 0,
+    "click_power": 1,
+    "passive_income": 0,
+    "aircrafts": {},
+    "upgrades": []
+}
+
+# Сохранение в localStorage
+def save_game():
+    try:
+        storage = window.localStorage
+        storage.setItem("clicker_game", json.dumps(game))
+    except:
+        pass
+
+# Загрузка из localStorage
+def load_game():
+    global game
+    try:
+        storage = window.localStorage
+        saved = storage.getItem("clicker_game")
+        if saved:
+            game.update(json.loads(saved))
+    except:
+        pass
+
+load_game()
+
+# Самолёты
+AIRCRAFTS = {
+    "f22": {"name": "F-22 Raptor", "emoji": "✈️", "cost": 50, "income": 1, "desc": "США, стелс-истребитель"},
+    "su57": {"name": "Су-57", "emoji": "🛩️", "cost": 100, "income": 2, "desc": "Россия, пятого поколения"},
+    "b2": {"name": "B-2 Spirit", "emoji": "🛫", "cost": 500, "income": 10, "desc": "США, стелс-бомбардировщик"},
+    "rafale": {"name": "Dassault Rafale", "emoji": "✈️", "cost": 300, "income": 6, "desc": "Франция, многоцелевой"},
+    "typhoon": {"name": "Eurofighter Typhoon", "emoji": "✈️", "cost": 400, "income": 8, "desc": "Европа, сверхманёвренный"},
+    "j20": {"name": "Chengdu J-20", "emoji": "✈️", "cost": 600, "income": 12, "desc": "Китай, стелс-истребитель"},
+    "f35": {"name": "F-35 Lightning II", "emoji": "✈️", "cost": 700, "income": 15, "desc": "США, многофункциональный"},
+    "tu160": {"name": "Ту-160", "emoji": "✈️", "cost": 1000, "income": 25, "desc": "Россия, стратегический бомбардировщик"},
+    "a10": {"name": "A-10 Thunderbolt II", "emoji": "✈️", "cost": 800, "income": 20, "desc": "США, штурмовик 'Вархог'"},
+    "sr71": {"name": "SR-71 Blackbird", "emoji": "🛸", "cost": 5000, "income": 100, "desc": "США, самый быстрый разведчик"}
+}
+
+# Улучшения
+UPGRADES = {
+    "click_1": {"name": "Улучшенные двигатели", "cost": 100, "effect": "click_power += 1", "desc": "+1 к клику"},
+    "click_2": {"name": "Турбореактивные", "cost": 500, "effect": "click_power += 5", "desc": "+5 к клику"},
+    "auto_1": {"name": "Дрон-разведчик", "cost": 200, "effect": "passive_income += 1", "desc": "+1$/сек"},
+    "auto_2": {"name": "Эскадрилья", "cost": 1000, "effect": "passive_income += 5", "desc": "+5$/сек"},
+    "mult_1": {"name": "Ракеты «Воздух-Воздух»", "cost": 300, "effect": "click_power *= 2", "desc": "x2 к клику"}
+}
+
+def update_ui():
+    document.getElementById("money").innerText = f"Деньги: ${game['money']:,}"
+    document.getElementById("click-power").innerText = str(game["click_power"])
+    document.getElementById("passive-income").innerText = str(game["passive_income"])
+    
+    # Самолёты
+    aircrafts_html = ""
+    for id, ac in AIRCRAFTS.items():
+        owned = game["aircrafts"].get(id, 0)
+        disabled = "disabled" if game["money"] < ac["cost"] else ""
+        aircrafts_html += f'''
+        <div class="item">
+            <div>
+                <strong>{ac["emoji"]} {ac["name"]}</strong><br>
+                <small>{ac["desc"]}</small><br>
+                <small>Доход: ${ac["income"]}/сек | Владеешь: {owned}</small>
+            </div>
+            <button class="buy-btn" onclick="buyAircraft('{id}')" {disabled}>
+                Купить за ${ac["cost"]}
+            </button>
+        </div>
+        '''
+    document.getElementById("aircrafts").innerHTML = aircrafts_html
+    
+    # Улучшения
+    upgrades_html = ""
+    for id, up in UPGRADES.items():
+        purchased = id in game["upgrades"]
+        disabled = "disabled" if purchased or game["money"] < up["cost"] else ""
+        btn_text = "Куплено" if purchased else f"${up['cost']}"
+        upgrades_html += f'''
+        <div class="item" {"style='background:#d4edda'" if purchased else ""}>
+            <div>
+                <strong>{up["name"]}</strong><br>
+                <small>{up["desc"]}</small>
+            </div>
+            <button class="buy-btn" onclick="buyUpgrade('{id}')" {disabled}>
+                {btn_text}
+            </button>
+        </div>
+        '''
+    document.getElementById("upgrades").innerHTML = upgrades_html
+
+def click_aircraft():
+    game["money"] += game["click_power"]
+    save_game()
+    update_ui()
+
+def buy_aircraft(id):
+    if id not in AIRCRAFTS:
+        return
+    ac = AIRCRAFTS[id]
+    if game["money"] < ac["cost"]:
+        return
+    game["money"] -= ac["cost"]
+    game["aircrafts"][id] = game["aircrafts"].get(id, 0) + 1
+    game["passive_income"] += ac["income"]
+    save_game()
+    update_ui()
+
+def buy_upgrade(id):
+    if id not in UPGRADES or id in game["upgrades"]:
+        return
+    up = UPGRADES[id]
+    if game["money"] < up["cost"]:
+        return
+    game["money"] -= up["cost"]
+    game["upgrades"].append(id)
+    effect = up["effect"]
+    if "click_power +=" in effect:
+        game["click_power"] += int(effect.split("+=")[1])
+    elif "click_power *=" in effect:
+        game["click_power"] *= int(effect.split("*=")[1])
+    elif "passive_income +=" in effect:
+        game["passive_income"] += int(effect.split("+=")[1])
+    save_game()
+    update_ui()
+
+# Экспорт функций в JS
+window.clickAircraft = create_proxy(click_aircraft)
+window.buyAircraft = create_proxy(buy_aircraft)
+window.buyUpgrade = create_proxy(buy_upgrade)
+
+# Автоматический доход
+def passive_income():
+    if game["passive_income"] > 0:
+        game["money"] += game["passive_income"]
+        save_game()
+        update_ui()
+
+setInterval(create_proxy(passive_income), 1000)
+
+# Первое обновление
+update_ui()
+  </py-script>
+</body>
+</html>
